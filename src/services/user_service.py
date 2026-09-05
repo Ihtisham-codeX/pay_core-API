@@ -2,12 +2,11 @@ from src.repositories import user_repository
 from src.schemas.user   import UserResponse, UpdateProfileRequest
 from src.exceptions.handlers import UserNotFoundException
 
-
-
-# this service converts raw DB rows into clean schema objects before returning.
-
+#_________________________________________________________________________________________
 
 def _row_to_user_response(row: tuple) -> UserResponse:
+#_________________________________________________________________________________________
+
     """Map a raw DB tuple to a UserResponse schema.
     Column order must match the SELECT in user_repository.
     """
@@ -24,17 +23,21 @@ def _row_to_user_response(row: tuple) -> UserResponse:
         created_at = row[9],
     )
 
+#_________________________________________________________________________________________
 
 def get_profile(user_id: int) -> UserResponse:
-    """Return the public profile of a user by their ID."""
+#_________________________________________________________________________________________
+
     row = user_repository.find_by_id(user_id)
     if row is None:
         raise UserNotFoundException()
     return _row_to_user_response(row)
 
+#_________________________________________________________________________________________
 
 def update_profile(user_id: int, data: UpdateProfileRequest) -> UserResponse:
-    """Update mutable profile fields for the authenticated user."""
+#_________________________________________________________________________________________
+
     row = user_repository.update_profile(
         user_id    = user_id,
         first_name = data.first_name,

@@ -74,7 +74,8 @@ def execute_transfer(sender_user_id: int, receiver_username: str, amount_major: 
         raise WalletFrozenException()
 
 
-    cursor = conn.cursor()
+    cursor = conn.cursor() # ONLY SINGLE CONNECTION USED BY ALL FUNCTIONS SO THERE IS ONLY ONE 
+    # FINAL COMMIT OR ROLLBACK AT THE END
 
     try:
 #_________________________________________________________________________________________
@@ -83,6 +84,17 @@ def execute_transfer(sender_user_id: int, receiver_username: str, amount_major: 
 #_________________________________________________________________________________________
 
         first_id, second_id = sorted([sender_wallet_id, receiver_wallet_id])
+        # we will lock the wallet with lower id first , to avoid deadlocks
+
+        ## deadlock scenario
+
+        # lets say transaction A (w1 (id : 234) -> w2 (239)) = lock w1 then w2
+        # lets say transaction B (w2 (id : 239) -> w1 (234)) = lock w2 then w1
+        # if A and B occur at same time A will lock w1 and B will lock w2 hence caught in deadlock
+
+        # but if both of them lock the lower id first (w1) , even if they occur at the same time 
+        # they will not get caught in deadlock
+
         locked_first  = wallet_repository.find_for_update(first_id,  cursor)
         locked_second = wallet_repository.find_for_update(second_id, cursor)
 
@@ -99,7 +111,7 @@ def execute_transfer(sender_user_id: int, receiver_username: str, amount_major: 
             locked_receiver = locked_first
 #_________________________________________________________________________________________
 
-        # read balance from the locked row and validate
+        # read balance after locking the wallets and validate
 #_________________________________________________________________________________________
     
         sender_balance = locked_sender[2]     # index 2 = balance (minor units)
