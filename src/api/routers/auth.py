@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Response, Cookie
+from fastapi import APIRouter, Depends, Response, Cookie
 from src.schemas.auth    import RegisterRequest, LoginRequest
 from src.services        import auth_service
 from src.security.cookies import set_auth_cookies, delete_auth_cookies
+from src.security.dependencies import get_current_user
 from src.exceptions.handlers import MissingRefreshTokenException
 
 
@@ -76,14 +77,17 @@ def refresh(response: Response, refresh_token: str = Cookie(None)):
 @router.post("/logout")
 #_________________________________________________________________________________________
 
-def logout(response: Response, refresh_token: str = Cookie(None)):
+def logout(
+    response:      Response,
+    user:          dict = Depends(get_current_user),
+    refresh_token: str  = Cookie(None),
+):
     """
     Revoke the refresh token and clear auth cookies.
-
     Workflow:
       refresh_token (cookie) → auth_service.logout() → DB token deleted
-      → cookies cleared → session ended
+      → cookies cleared → audit logged → session ended
     """
-    auth_service.logout(refresh_token)
+    auth_service.logout(refresh_token, user_id=user["user_id"])
     delete_auth_cookies(response)
     return {"message": "Logged out successfully."}

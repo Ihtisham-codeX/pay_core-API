@@ -4,6 +4,7 @@ from src.config import settings
 from src.security.hashing import hash_password, verify_password
 from src.security.jwt    import create_access_token, create_refresh_token, verify_refresh_token
 from src.repositories    import user_repository, token_repository, wallet_repository
+from src.services        import audit_service
 from src.exceptions.handlers import (
     UserAlreadyExistsException,
     InvalidCredentialsException,
@@ -31,6 +32,13 @@ def register(email: str, username: str, password: str, first_name: str, last_nam
 
     # Every user gets a wallet at registration.
     wallet_repository.create_wallet(user_id=user_row[0])
+
+    audit_service.log(
+        user_id     = user_row[0],
+        action      = audit_service.USER_REGISTERED,
+        resource    = "user",
+        resource_id = str(user_row[0]),
+    )
 
     return {
         "message":    "Account created successfully.",
@@ -71,6 +79,13 @@ def login(email: str, password: str) -> tuple[str, str]:
     expires_at = datetime.utcnow() + timedelta(days=settings.JWT_REFRESH_EXPIRE_DAYS)
     token_repository.save(user_row[0], refresh_token, expires_at)
 
+    audit_service.log(
+        user_id     = user_row[0],
+        action      = audit_service.USER_LOGIN,
+        resource    = "user",
+        resource_id = str(user_row[0]),
+    )
+
     return access_token, refresh_token
 #_________________________________________________________________________________________
 
@@ -104,8 +119,15 @@ def refresh(refresh_token: str) -> tuple[str, str]:
     return new_access_token, new_refresh_token
 #_________________________________________________________________________________________
 
-def logout(refresh_token: str | None) -> None:
-#_________________________________________________________________________________________
+def logout(refresh_token: str | None, user_id: int | None = None) -> None:
 
     if refresh_token:
         token_repository.revoke(refresh_token)
+
+    if user_id:
+        audit_service.log(
+            user_id     = user_id,
+            action      = audit_service.USER_LOGOUT,
+            resource    = "user",
+            resource_id = str(user_id),
+        )
