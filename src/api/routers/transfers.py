@@ -1,86 +1,72 @@
-import json
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 from src.schemas.transfer      import TransferRequest, TransferResponse
 from src.services              import transfer_service, audit_service
-from src.repositories          import idempotency_repository
-from src.security.dependencies import get_current_user
+from src.services.redis_service import RedisService, RedisUnavailableError
+from src.security.dependencies import get_current_user, enforce_user_rate_limit
+from src.exceptions.handlers import (
+    IdempotencyInProgressException,
+    IdempotencyKeyRequiredException,
+    RedisUnavailableException,
+)
 
 
 router = APIRouter(prefix="/transfers", tags=["Transfers"])
 
-_ENDPOINT = "POST /transfers"
 
-#_________________________________________________________________________________________
+def _redis() -> RedisService:
+    return RedisService()
+
 
 @router.post("/", response_model=TransferResponse, status_code=201)
-#_________________________________________________________________________________________
-
 def create_transfer(
     request:          Request,
     body:             TransferRequest,
     user:             dict = Depends(get_current_user),
+    _:                None = Depends(enforce_user_rate_limit),
     idempotency_key:  str | None = Header(None, alias="Idempotency-Key"),
 ):
     """
     Send money to another user.
 
-    Idempotency:
-      Include an  Idempotency-Key: <uuid>  header with every request.
-      If the same key is sent again, the saved response is returned
-      immediately — money is NOT moved a second time.
-
-    Workflow:
-      1. Check Idempotency-Key against DB
-      2. If found → return cached response
-      3. If not   → execute transfer → save key + response → return
-      4. Log audit event
+    Idempotency is gated in Redis (SET NX EX), not PostgreSQL.
+    PostgreSQL remains the permanent ledger for the transfer itself.
     """
     user_id = user["user_id"]
 
-#_________________________________________________________________________________________
+    if not idempotency_key:
+        raise IdempotencyKeyRequiredException()
 
-    # Idempotency check 
-#_________________________________________________________________________________________
+    redis_svc = _redis()
+    if not redis_svc.is_available():
+        raise RedisUnavailableException()
 
-    if idempotency_key:
-        existing = idempotency_repository.find(
-            key      = idempotency_key,
-            user_id  = user_id,
-            endpoint = _ENDPOINT,
+    redis_key = redis_svc.idempotency_key(user_id, idempotency_key)
+
+    try:
+        claimed = redis_svc.claim_idempotency_key(redis_key)
+    except RedisUnavailableError:
+        raise RedisUnavailableException()
+
+    if not claimed:
+        record = redis_svc.get_idempotency_record(redis_key)
+        if record is None:
+            raise RedisUnavailableException()
+        if record["status"] == "PENDING":
+            raise IdempotencyInProgressException()
+        return JSONResponse(content=record["result"], status_code=200)
+
+    try:
+        result = transfer_service.execute_transfer(
+            sender_user_id    = user_id,
+            receiver_username = body.receiver_username,
+            amount_major      = body.amount,
         )
-        if existing:
-            # Key was already used , return the saved response 
-            saved_body = json.loads(existing[4])   # index 4 = response_body
-            return JSONResponse(content=saved_body, status_code=200)
+    except Exception:
+        redis_svc.release_idempotency_key(redis_key)
+        raise
 
-#_________________________________________________________________________________________
-
-    # Execute the transfer 
-#_________________________________________________________________________________________
-
-    result = transfer_service.execute_transfer(
-        sender_user_id    = user_id,
-        receiver_username = body.receiver_username,
-        amount_major      = body.amount,
-    )
-
-#_________________________________________________________________________________________
-
-    # Step 3: Save idempotency key + response 
-#_________________________________________________________________________________________
-
-    if idempotency_key:
-        idempotency_repository.save(
-            key           = idempotency_key,
-            user_id       = user_id,
-            endpoint      = _ENDPOINT,
-            response_body = result.model_dump_json(),
-        )
-#_________________________________________________________________________________________
-
-    # Audit log                                                                        
-#_________________________________________________________________________________________
+    redis_svc.complete_idempotency(redis_key, result.model_dump(mode="json"))
 
     audit_service.log(
         user_id     = user_id,
@@ -92,4 +78,3 @@ def create_transfer(
     )
 
     return result
-

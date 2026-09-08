@@ -84,3 +84,35 @@ class InsufficientBalanceException(HTTPException):
 class SelfTransferException(HTTPException):
     def __init__(self):
         super().__init__(status_code=400, detail="Cannot transfer to your own wallet.")
+
+
+class RedisUnavailableException(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=503,
+            detail="Service temporarily unavailable. Please retry shortly.",
+        )
+
+
+class RateLimitExceededException(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=429,
+            detail="Too many requests. Please wait and try again.",
+        )
+
+
+class IdempotencyInProgressException(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=409,
+            detail="A request with this Idempotency-Key is still in progress. Retry shortly.",
+        )
+
+
+class IdempotencyKeyRequiredException(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=400,
+            detail="Idempotency-Key header is required for transfers.",
+        )
