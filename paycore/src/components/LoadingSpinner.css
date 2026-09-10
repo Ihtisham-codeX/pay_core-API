@@ -1,0 +1,8 @@
+/* Styles for LoadingSpinner (shared classes live in index.css) */
+
+/* Spinner inside an orange button must have white rings */
+.btn .spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}

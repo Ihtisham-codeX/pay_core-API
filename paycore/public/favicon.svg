@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <!-- PayCore favicon: rounded orange square + white "P" mark (matches Logo.jsx) -->
+  <rect width="48" height="48" rx="14" fill="#F97316"/>
+  <path d="M17 38V13.8a2.6 2.6 0 0 1 2.6-2.6H26a9.4 9.4 0 0 1 0 18.8h-6.4"
+        fill="none" stroke="#FFFFFF" stroke-width="4.6" stroke-linecap="round"/>
+  <circle cx="32.6" cy="35" r="3.4" fill="#FFFFFF"/>
+</svg>

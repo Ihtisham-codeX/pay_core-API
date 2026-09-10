@@ -1,0 +1,666 @@
+================================================================================
+ PAYCORE FRONTEND — THE COMPLETE EXPLANATION
+================================================================================
+ Written for: you (a Python developer, new to React and JavaScript)
+ Goal: by the end of this file you will know exactly WHAT happens, in WHICH
+       file, and WHEN it talks to the FastAPI backend — from the moment the
+       app loads to the moment a transfer succeeds.
+
+ HOW TO READ THIS FILE
+ ---------------------
+ Read it top to bottom once. After that, use it as a reference:
+ each workflow (login, send money, ...) has its own numbered walkthrough
+ with the exact file names involved at every step.
+
+ Python analogies are marked like this:  [PYTHON ANALOGY]
+
+
+================================================================================
+ 1. THE BIG PICTURE — TWO PROGRAMS TALKING OVER HTTP
+================================================================================
+
+ Your project is really two separate programs:
+
+   PROGRAM 1: The FRONTEND  (folder: paycore/)
+   - React + JavaScript, runs IN THE BROWSER.
+   - Draws every screen you see: buttons, cards, colors.
+   - Knows NOTHING about money logic. It only displays data and sends
+     requests. All financial correctness lives in the backend.
+
+   PROGRAM 2: The BACKEND   (folder: src/ + main.py at repo root)
+   - FastAPI + Python, runs on your machine at port 8000.
+   - Owns the database (PostgreSQL), Redis, JWTs, idempotency,
+     rate limiting, audit logs. You told me not to touch it — I didn't.
+
+ They talk using HTTP + JSON, exactly like a Python script using `requests`:
+
+       BROWSER (React)                        YOUR MACHINE (FastAPI)
+   ┌─────────────────────┐    HTTP/JSON    ┌─────────────────────────┐
+   │  localhost:5173     │ ──────────────> │  127.0.0.1:8000         │
+   │  draws the UI       │ <────────────── │  thinks, checks, stores │
+   └─────────────────────┘                 └─────────────────────────┘
+
+ One extra character in the mix: the VITE DEV SERVER. When you run
+ `npm run dev`, Vite serves the frontend on port 5173 AND quietly forwards
+ any request starting with "/api" to the backend on port 8000. This is
+ called a PROXY. [PYTHON ANALOGY: it is like a tiny nginx, or like mounting
+ one FastAPI sub-app under another path.]
+
+
+================================================================================
+ 2. FOLDER MAP — EVERY FILE AND ITS ONE-LINE JOB
+================================================================================
+
+ paycore/
+ ├── index.html               The single HTML page. React fills the <div id="root">.
+ ├── vite.config.js           Dev-server settings + THE PROXY (/api → port 8000).
+ ├── package.json             Dependency list + npm scripts (dev/build/lint).
+ ├── .env.example             Template for VITE_API_BASE_URL (optional, dev needs nothing).
+ ├── public/favicon.svg       The browser-tab icon (PayCore "P").
+ │
+ └── src/
+     ├── main.jsx             Entry point. Puts <App /> into the HTML page.
+     ├── App.jsx              The route map: which URL shows which page.
+     ├── index.css            The whole orange/white theme (one file, plain CSS).
+     │
+     ├── context/
+     │   └── AuthContext.jsx  "Who is logged in?" — shared user state + login/logout.
+     │
+     ├── api/                 THE API LAYER — every HTTP call lives here.
+     │   ├── api.js           ONE configured axios instance + refresh interceptor.
+     │   ├── authApi.js       POST /auth/register, /auth/login, /auth/logout.
+     │   ├── userApi.js       GET  /users/me  (my profile).
+     │   ├── walletApi.js     GET  /wallets/me (my balance).
+     │   ├── transferApi.js   POST /transfers/  (owns the Idempotency-Key logic).
+     │   └── transactionApi.js GET /transactions/ (paginated history).
+     │
+     ├── components/          Reusable building blocks (no page of their own).
+     │   ├── ProtectedRoute.jsx   Doorman: logged out? → bounce to /login.
+     │   ├── Sidebar.jsx          Desktop left menu.
+     │   ├── BottomNavigation.jsx Mobile bottom bar (same 4 links).
+     │   ├── Navbar.jsx           Top bar: page title + avatar.
+     │   ├── BalanceCard.jsx      The big orange balance card with hide/show eye.
+     │   ├── QuickAction.jsx      One tile in the quick-actions grid.
+     │   ├── TransactionItem.jsx  One transaction row (used by 2 pages).
+     │   ├── Logo.jsx             The PayCore logo mark.
+     │   └── LoadingSpinner.jsx   Spinner used everywhere.
+     │
+     ├── pages/               One file per screen.
+     │   ├── Login.jsx            /login
+     │   ├── Register.jsx         /register
+     │   ├── Dashboard.jsx        /dashboard
+     │   ├── SendMoney.jsx        /send-money
+     │   ├── Transactions.jsx     /transactions
+     │   ├── TransactionDetails.jsx  /transactions/:id
+     │   ├── Profile.jsx          /profile
+     │   └── NotFound.jsx         anything else (404)
+     │
+     └── utils/
+         ├── formatCurrency.js    125450 → "Rs. 125,450.00"
+         └── formatDate.js        ISO string → "08 September 2026" / "Today" / etc.
+
+ THE ONE RULE OF THIS ARCHITECTURE:
+   Pages NEVER call axios directly. Pages call functions in src/api/*.js,
+   and those functions use the shared axios instance in api.js.
+   [PYTHON ANALOGY: views don't build SQL; they call repository/service
+    functions. Same idea: UI layer → API layer → HTTP.]
+
+
+================================================================================
+ 3. STARTUP — WHAT HAPPENS BEFORE YOU SEE ANYTHING
+================================================================================
+
+ Step 1.  You open http://localhost:5173.
+          The browser downloads index.html — it contains one empty
+          <div id="root"> and one <script> tag pointing at main.jsx.
+
+ Step 2.  main.jsx runs.
+          It imports the global theme (index.css) and renders <App />
+          inside the #root div. From here on, React owns the page.
+          (StrictMode in main.jsx is a dev-only bug catcher; it double-runs
+          some logic in development and disappears in production builds.)
+
+ Step 3.  App.jsx builds the route map.
+          Routes come in two groups:
+
+            PUBLIC  (no session needed):   /login, /register
+            PRIVATE (session required):    /dashboard, /send-money,
+                                           /transactions, /transactions/:id,
+                                           /profile
+            plus: "/" → redirect to /dashboard, and "*" → 404 page.
+
+          All private routes share one LAYOUT (AppLayout inside App.jsx):
+          Sidebar + Navbar on top/left, and an <Outlet /> hole where the
+          matched page appears. BottomNavigation renders on small screens
+          (index.css hides Sidebar below 900px and shows BottomNavigation).
+
+ Step 4.  AuthContext boots up and asks the backend a question:
+          "does the visitor already have a valid session?"
+
+          → FILES: AuthContext.jsx calls userApi.getMyProfile()
+          → HTTP:  GET /users/me  (goes through api.js → proxy → FastAPI)
+
+          Why ask the server instead of checking something in the browser?
+          Because your backend authenticates with HttpOnly COOKIES — the
+          browser stores them and attaches them automatically, but
+          JavaScript is NOT ALLOWED to read them (that is what makes them
+          safe from XSS). So the only honest way to know "am I logged in?"
+          is to ask the server.
+
+          Result:
+            200  → session exists → user object saved in context.
+            401  → no session → context stays null.
+          Either way, `booting` flips to false and the app renders.
+
+ Step 5.  ProtectedRoute decides what you see:
+            still booting?            → full-page spinner
+            no user?                  → redirect to /login
+            user present?             → render the page you asked for
+
+          [PYTHON ANALOGY: ProtectedRoute is a dependency — like
+           `user: User = Depends(get_current_user)` — but rendered as UI.
+           401 in FastAPI ≈ redirect to /login in React.]
+
+
+================================================================================
+ 4. HOW EVERY API REQUEST TRAVELS (THE PIPELINE)
+================================================================================
+
+ Every single backend call in this app follows the same 8 steps. Example:
+ the Dashboard asking for the balance.
+
+   1. Dashboard.jsx calls getMyWallet()            (page → api layer)
+   2. walletApi.js runs api.get("/wallets/me")     (api layer → axios)
+   3. api.js attaches baseURL → "/api/wallets/me"  (URL gets its /api prefix)
+   4. Axios adds the cookies automatically         (withCredentials: true)
+   5. Browser sends it to localhost:5173
+   6. Vite's proxy sees "/api..." → strips the prefix → forwards to
+      http://127.0.0.1:8000/wallets/me
+   7. FastAPI's AuthMiddleware reads the access_token cookie, finds the
+      user, and the wallet router answers with JSON.
+   8. JSON comes back the same road → axios resolves → Dashboard.jsx
+      does setWallet(data) → React re-renders → the card shows "Rs. ..."
+
+   [PYTHON ANALOGY: axios ≈ a shared `httpx.Client` with cookies enabled.
+    The Vite proxy ≈ a reverse proxy in front of uvicorn.
+    The interceptor in api.js ≈ middleware, like your AuthMiddleware.]
+
+ WHY THE "/api" PREFIX EXISTS (important!)
+   Your React app ALSO has a page at /transactions, and your backend ALSO
+   has endpoints under /transactions. Without the prefix, refreshing the
+   /transactions PAGE would hit the proxy and show raw JSON instead of the
+   app. With "/api", only genuine API traffic is forwarded; page URLs stay
+   clean and a refresh on /transactions loads the React app normally.
+
+ WHY COOKIES INSTEAD OF A TOKEN IN localStorage
+   - HttpOnly cookies cannot be read by JavaScript → an XSS bug in any
+     library cannot steal your JWT.
+   - The browser attaches them automatically → no manual "Authorization"
+     header on every call.
+   - api.js sets `withCredentials: true` once, so every request carries them.
+
+ THE SILENT REFRESH (api.js interceptor) — the cleverest part
+   Access token: 30 minutes. Refresh token: 7 days (both cookies).
+   When the access cookie expires mid-session, requests start failing
+   with 401. Instead of kicking you out, the interceptor in api.js:
+
+     1. Sees a 401 (and the request isn't an /auth/* call, and we haven't
+        already retried it once — the `_retry` marker prevents loops).
+     2. Calls POST /auth/refresh → backend rotates both cookies.
+     3. REPLAYS the original request as if nothing happened.
+     4. If several requests fail at once (dashboard fires two), one refresh
+        happens and the others WAIT in a queue (`isRefreshing` +
+        `queuedRequests`), then all get replayed.
+
+   Only if the refresh ITSELF fails (7 days passed, or logged out) does
+   the error reach AuthContext → user is sent to /login.
+
+ ERROR MESSAGES (getErrorMessage in api.js)
+   One function converts HTTP status codes into human sentences, used by
+   every page:
+
+     400  → show the backend's own detail ("Insufficient wallet balance.")
+     401  → "Your session has expired. Please log in again."
+     403  → "You don't have permission to do this."
+     404  → "Not found."
+     409  → "That request is still being processed..." (transfer in flight)
+     429  → "Too many requests..." (Redis limiter: 60 req/min per user)
+     500+ → "Something went wrong. Please try again later."
+     no response at all → "Unable to connect to PayCore..."
+   [PYTHON ANALOGY: this is your exception handler layer, but on the
+    browser side.]
+
+
+================================================================================
+ 5. WORKFLOW: OPENING THE APP / REFRESHING THE PAGE
+================================================================================
+
+ Files involved, in order:
+   index.html → main.jsx → App.jsx → AuthContext.jsx → userApi.js
+   → api.js → (Vite proxy) → FastAPI /users/me
+   → ProtectedRoute.jsx → your page
+
+ 1. React mounts; AuthContext starts with user = null, booting = true.
+ 2. ProtectedRoute sees booting → shows "Loading PayCore..." spinner.
+ 3. In the background: GET /users/me with cookies attached.
+ 4a. Valid session  → user saved → booting=false → dashboard renders
+     with your name, balance, transactions.
+ 4b. No session     → user stays null → booting=false → <Navigate to="/login">.
+
+ You never see a flash of the login page on a refresh — that is exactly
+ what the `booting` state exists to prevent.
+
+
+================================================================================
+ 6. WORKFLOW: REGISTER
+================================================================================
+
+ Files: Register.jsx → AuthContext.jsx → authApi.js → api.js
+        → POST /auth/register
+
+ 1. Register.jsx keeps ALL form fields in ONE state object:
+       const [form, setForm] = useState({ firstName: "", ... })
+    Any keystroke calls handleChange which does:
+       setForm({ ...form, [name]: value })     ← spread = "copy old, change one key"
+    [PYTHON ANALOGY: new_dict = {**old_dict, "email": new_email}]
+
+ 2. You press "Register" → validate() runs FIRST in the browser:
+       - names required
+       - username 3–30 chars, letters/digits/underscore
+       - email shape check
+       - password ≥ 8 chars, matches confirm
+    These give INSTANT feedback. The backend re-checks everything with
+    Pydantic anyway — never trust the browser.
+
+ 3. If validation passes → register(formData) from AuthContext
+    → registerUser() in authApi.js
+    → POST /auth/register with JSON:
+        { email, username, password,
+          first_name, last_name,     ← camelCase renamed to snake_case here!
+          phone: null }
+    Note: authApi.js is the ONLY place where JavaScript camelCase meets
+    Python snake_case. Components stay clean.
+
+ 4. Success (201): the backend creates the user + wallet but does NOT log
+    you in (no cookies yet). Register.jsx navigates to /login so you sign
+    in with your new credentials.
+
+ 5. Failure: AuthContext returns { ok: false, error } → the orange error
+    banner shows e.g. "Email or username already registered."
+
+
+================================================================================
+ 7. WORKFLOW: LOGIN
+================================================================================
+
+ Files: Login.jsx → AuthContext.jsx → authApi.js → api.js
+        → POST /auth/login  →  GET /users/me
+
+ 1. Login.jsx holds four simple states:
+       email, password, showPassword, error, loading
+    Each input is a CONTROLLED INPUT: its value comes FROM React state
+    and every keystroke writes back TO state via onChange. State is the
+    single source of truth; the DOM just mirrors it.
+
+ 2. Submit → handleSubmit:
+       - e.preventDefault() stops the browser's old-school full page reload.
+       - quick client check (fields not empty).
+       - setLoading(true) → button shows a spinner and is disabled
+         (no double clicks).
+
+ 3. AuthContext.login(email, password):
+       a) loginUser() → POST /auth/login
+          Backend verifies the password, then answers with Set-Cookie
+          headers: access_token + refresh_token (HttpOnly). The BROWSER
+          stores them automatically. Our JavaScript never touches them.
+       b) immediately after, getMyProfile() → GET /users/me
+          (the fresh cookies are attached automatically) → user object.
+       c) setUser(user) → context updates → returns { ok: true }.
+
+ 4. Login.jsx: result.ok → navigate("/dashboard", { replace: true }).
+    `replace` means the login page doesn't stay in the back-button history.
+
+ 5. Wrong credentials → backend 401 → getErrorMessage turns it into
+    "Invalid email or password." (or the backend's own detail) → red alert.
+
+
+================================================================================
+ 8. WORKFLOW: DASHBOARD (/dashboard)
+================================================================================
+
+ Files: Dashboard.jsx, BalanceCard.jsx, QuickAction.jsx,
+        TransactionItem.jsx, walletApi.js, transactionApi.js, api.js
+ HTTP:  GET /wallets/me   AND   GET /transactions/?page=1&page_size=5
+
+ 1. Dashboard mounts. useAuth() gives it the user (from context — no new
+    profile call). The greeting is computed from the clock:
+       "Good morning, Ali 👋"
+
+ 2. TWO useEffect blocks run ONCE (empty dependency array []). They fire
+    INDEPENDENTLY on purpose:
+       loadWallet()        → GET /wallets/me        → { balance, currency, ... }
+       loadTransactions()  → GET /transactions/ p.1 → 5 most recent
+    Each has its OWN state trio — data / loading / error. If one endpoint
+    dies, the other still renders. [PYTHON ANALOGY: two try/except blocks,
+    not one wrapper.]
+
+ 3. BalanceCard receives { balance, loading, currency } as PROPS.
+    Props = how a parent passes data into a child, like function arguments.
+    Inside, its own useState `hidden` powers the eye toggle:
+       hidden → shows "Rs. ••••••" (privacy, like real banking apps).
+    If the wallet request failed, balance is undefined → "Rs. ——"
+    (honest placeholder, never a fake Rs. 0.00).
+
+ 4. Quick actions row:
+       Send Money    → <Link to="/send-money">   (real route)
+       Transactions  → <Link to="/transactions"> (real route)
+       Add Money     → disabled button "Coming soon"
+       Pay Bills     → disabled button "Coming soon"
+    Disabled because your backend has no top-up/bills endpoints. Honest UI:
+    never pretend a feature exists.
+
+ 5. Recent transactions panel → TransactionItem per row:
+       - entry_type "debit"  → orange ↑ arrow, "− Rs. 2,500", label "Money Transfer"
+       - entry_type "credit" → green  ↓ arrow, "+ Rs. 5,000", label "Money Received"
+    Your transactions API returns no counterparty name, so the UI shows the
+    TYPE as the title. We never invent data the backend didn't send.
+    ".map()" turns each object into JSX; the `key={t.id}` prop helps React
+    track rows between renders.
+
+ 6. "This Session" side card computes money-in/money-out from the 5 loaded
+    transactions using .filter() + .reduce()
+    [PYTHON ANALOGY: sum(abs(t["amount"]) for t in txs if t["entry_type"]=="credit")].
+
+ 7. Every list has three possible faces: loading spinner / error alert /
+    empty state ("No transactions yet" with an inbox icon). A blank page
+    is never acceptable.
+
+
+================================================================================
+ 9. WORKFLOW: SEND MONEY (/send-money) — THE STAR OF THE SHOW
+================================================================================
+
+ Files: SendMoney.jsx → transferApi.js → api.js
+ HTTP:  POST /transfers/  with header  Idempotency-Key: <uuid>
+
+ The screen is a 3-step "step machine" driven by ONE state variable:
+       const [step, setStep] = useState("form")   // "form" | "confirm" | "success"
+ The JSX returned depends on `step` — a simple way to build a multi-step
+ flow with zero extra libraries.
+
+ STEP 1 — FORM
+   Fields: receiver username, amount (with Rs. 500/1,000/5,000 chips).
+   You press Continue → handleContinue():
+     - validates: username not empty, Number(amount) > 0
+       [PYTHON ANALOGY: if not username.strip() or not float(amount) > 0]
+     - THEN, and this is the crucial moment, it creates the IDEMPOTENCY KEY:
+
+           setIdempotencyKey(crypto.randomUUID())
+
+     It is stored in STATE, not in a local variable, so it survives the
+     re-renders between Continue and Confirm. It is generated HERE — at
+     the moment your INTENT exists — and NOT inside the send function.
+     If it were generated per attempt, every retry would carry a new key
+     and idempotency would be useless. The key identifies the intent
+     ("send Rs. 5,000 to @ahmed"), not the attempt.
+     → setStep("confirm").
+
+ STEP 2 — CONFIRM
+   Shows the big amount, "@username", and From = "Your PayCore Wallet".
+   [ Confirm Transfer ]  →  confirmTransfer():
+     - setSending(true) → button disabled + spinner. THIS is the first
+       line of defence against double submissions.
+     - sendTransfer(username, amount, idempotencyKey) in transferApi.js:
+
+           api.post("/transfers/",
+             { receiver_username, amount: Number(amount) },
+             { headers: { "Idempotency-Key": idempotencyKey } })
+
+     (note the trailing slash — the backend route demands it)
+     - Backend flow: AuthMiddleware → rate limiter (429 if > 60/min) →
+       Redis checks the key → executes transfer in a DB transaction →
+       records key → result in Redis for 24h → 201 with the receipt JSON:
+         { reference: "TXN-...", amount, currency, status, ... }
+     - 201 → setReceipt(data) → setStep("success").
+
+   WHAT IF THE NETWORK DIES MID-REQUEST? The user presses Confirm again.
+   The SAME key is sent. The backend finds the key in Redis and returns
+   the SAME recorded result instead of moving money twice. That is
+   idempotency. The user can hammer the button; money moves once.
+
+   Special case: 409 means the key exists but the first attempt is STILL
+   processing → message "Press Confirm again in a moment" and we STAY on
+   the confirm screen (retry keeps the same key — correct behaviour).
+
+   Other failures (400 insufficient balance / 400 self-transfer / 429
+   rate limit / network down) → getErrorMessage() → red banner → back to
+   the form so you can fix something. NO new key is generated until you
+   press Continue again — a new Continue = a new intent = a new key.
+
+ STEP 3 — SUCCESS
+   Green check circle, the amount, @username, the reference (TXN-...),
+   status badge, and two buttons:
+     [ Done ]              → resets every state (fresh form, fresh key later)
+     [ View Transactions ] → Link to /transactions
+
+ [PYTHON ANALOGY FOR THE WHOLE FLOW]
+   It is a tiny state machine: form → confirm → success, exactly like an
+   if/elif on a "current step" variable, except React re-renders the right
+   screen automatically whenever the variable changes.
+
+
+================================================================================
+ 10. WORKFLOW: TRANSACTIONS HISTORY (/transactions)
+================================================================================
+
+ Files: Transactions.jsx, TransactionItem.jsx, transactionApi.js, api.js,
+        utils/formatDate.js
+ HTTP:  GET /transactions/?page=N&page_size=10
+
+ 1. Mount → loadPage(1) → big spinner while the first page loads.
+
+ 2. Response shape from your backend:
+       { total, page, page_size, transactions: [...] }
+    The list is APPENDED, not replaced:
+       setTransactions(prev => [...prev, ...newItems])
+    [PYTHON ANALOGY: new_list = [*old_list, *new_items]]
+    `page` in state moves forward each time.
+
+ 3. "Load more" button (with its own small spinner) calls loadPage(page).
+    It disappears when transactions.length >= total — computed each render:
+       const hasMore = transactions.length < total;
+
+ 4. Date grouping is DERIVED, not stored: reduce() walks the list once and
+    builds { "Today": [...], "Yesterday": [...], "08 September 2026": [...] }
+    using dateGroupLabel() from utils. When data changes, headings update
+    automatically — no duplicate state to keep in sync.
+
+ 5. Each row is wrapped in <Link to={`/transactions/${t.id}`}> so a click
+    opens the receipt page. States: loading / error / empty / success —
+    all four handled.
+
+
+================================================================================
+ 11. WORKFLOW: TRANSACTION DETAILS (/transactions/:id)
+================================================================================
+
+ Files: TransactionDetails.jsx, transactionApi.js, api.js, utils
+ HTTP:  GET /transactions/?page=1&page_size=100
+
+ 1. The ":id" in the route is a URL PARAMETER. useParams() reads it:
+       /transactions/42  →  { id: "42" }
+    [PYTHON ANALOGY: @app.get("/transactions/{tx_id}") — same idea, client side.
+     Note: URL params arrive as STRINGS, hence the String(t.id) comparison.]
+
+ 2. Your backend has NO single-transaction endpoint (only the paginated
+    list), so the page fetches page 1 (100 rows) and finds the row by id.
+    Honest limitation, clearly commented in the code. If you later add
+    GET /transactions/:id to the backend, ONLY transactionApi.js needs a
+    new function and this page one line — that is the API layer paying off.
+
+ 3. Guards before rendering:
+       loading → spinner page
+       error / not found → red alert + "Back to Transactions" button
+       found → receipt: direction icon, big ±amount, reference, type,
+               status badge, date, direction in words.
+   The useEffect depends on [id], so navigating between receipts re-runs it.
+
+
+================================================================================
+ 12. WORKFLOW: PROFILE AND LOGOUT (/profile)
+================================================================================
+
+ Files: Profile.jsx, Navbar.jsx, Sidebar.jsx, AuthContext.jsx, authApi.js
+ HTTP:  POST /auth/logout
+
+ 1. Profile makes NO network call — the user object already lives in
+    AuthContext (fetched at login/boot). Context doing its job.
+    Shows: avatar initial, full name, @username, email, phone (or
+    "Not provided"), member-since date, account status. Nothing invented:
+    no "change password" because no such endpoint exists.
+
+ 2. Logout button:
+       Profile or Sidebar → AuthContext.logout()
+       → logoutUser() → POST /auth/logout
+       → backend revokes the refresh token and CLEARS both cookies
+       → finally: setUser(null)
+    And here is the elegant part: NO navigate() call is needed.
+    The user vanishing from context makes ProtectedRoute re-render and
+    it redirects to /login by itself. The UI reacts to state — you never
+    manually push screens around.
+    [PYTHON ANALOGY: declarative UI ≈ the view is a pure function of state;
+     change the state, the "view function" re-runs.]
+
+
+================================================================================
+ 13. EVERY BACKEND ENDPOINT THE FRONTEND CALLS (CHEAT SHEET)
+================================================================================
+
+   POST /auth/register          authApi.js   registerUser()        → 201
+   POST /auth/login             authApi.js   loginUser()           → sets cookies
+   POST /auth/logout            authApi.js   logoutUser()          → clears cookies
+   POST /auth/refresh           api.js       interceptor only      → rotates cookies
+   GET  /users/me               userApi.js   getMyProfile()        → profile JSON
+   GET  /wallets/me             walletApi.js getMyWallet()         → balance JSON
+   POST /transfers/             transferApi.js sendTransfer()      → 201 receipt
+                                (+ required Idempotency-Key header)
+   GET  /transactions/          transactionApi.js getMyTransactions(p, size)
+                                                              → { total, transactions[] }
+
+ That is ALL of them. No endpoint was invented. Anything the backend does
+ not offer (top-ups, bills, editing profile) appears as disabled UI.
+
+
+================================================================================
+ 14. REACT CONCEPTS TO LEARN FROM THIS CODEBASE (WITH PYTHON ANALOGIES)
+================================================================================
+
+ COMPONENT
+   A function that returns UI. `function Dashboard() { return <div/> }`
+   is literally a Python function returning a different kind of value.
+   Pages are big components; Sidebar/BalanceCard are small reusable ones.
+
+ JSX
+   HTML-looking syntax inside JavaScript. Curly braces embed values:
+       <h1>Good morning, {displayName}</h1>
+   [PYTHON ANALOGY: f-strings that produce UI instead of str.]
+
+ PROPS
+   Arguments passed into a component:
+       <BalanceCard balance={wallet?.balance} loading={walletLoading} />
+   The child NEVER changes props — it displays them.
+
+ useState
+   `const [wallet, setWallet] = useState(null)` — a value React watches.
+   Calling setWallet(new) both stores AND re-renders the screen.
+   A plain `let x = 5` would change nothing on screen. This one idea is
+   80% of React.
+
+ useEffect
+   "After rendering, run this." With [] it runs once on mount — the
+   standard place to fetch data. useEffect's callback cannot be async
+   itself, so the pattern is: define an async function inside, call it.
+   [PYTHON ANALOGY: FastAPI's startup event, but per-component.]
+
+ CONTEXT (AuthContext)
+   Data any component can read without passing it through every parent.
+   [PYTHON ANALOGY: app-level dependency injection, or a `Depends(get_user)`
+   available everywhere instead of threading a parameter through 10 layers.]
+
+ REACT ROUTER
+   URL → component mapping, like FastAPI routes but for screens.
+     <Route path="/transactions/:id" element={<TransactionDetails />} />
+   useParams() ≈ path parameters. <Link> ≈ smart <a> that avoids reloads.
+   <Outlet> = the hole in the layout where the matched page renders.
+
+ CONTROLLED INPUTS
+   input's value comes from state; onChange writes back to state.
+   The form is always a reflection of state, never of the DOM.
+
+ CONDITIONAL RENDERING
+       {loading ? <Spinner/> : error ? <Alert/> : <List/>}
+   Same as if/elif/else — but as an expression, inside JSX.
+
+ .map() / .filter() / .reduce()
+   How React renders lists and computes derived data. If you know Python
+   comprehensions and sum(), you already know these.
+
+ INTERCEPTORS (axios, in api.js)
+   [PYTHON ANALOGY: your AuthMiddleware/LoggingMiddleware — functions that
+   see every request/response and can transform or retry them.]
+
+
+================================================================================
+ 15. WHEN SOMETHING BREAKS — SYMPTOM → CAUSE → CHECK
+================================================================================
+
+ "Unable to connect to PayCore..."
+     → Backend not running, or crashed on startup.
+     → Check: is uvicorn alive? Redis up? PostgreSQL up?
+       (main.py connects to Redis at startup — if Redis is down,
+        uvicorn exits immediately.)
+
+ Login always fails / every request 401
+     → Cookies are not travelling.
+     → Check: you are on localhost:5173 (NOT opening index.html from the
+       file system), and vite.config.js proxy still points at port 8000.
+
+ "Your session has expired" despite sitting idle < 30 min
+     → Refresh cookie gone (7-day expiry, logout, or Redis restarted and
+       revoked tokens). Log in again.
+
+ 429 "Too many requests"
+     → Redis rate limiter (60 req/min per user). Wait a minute.
+
+ 409 on Confirm Transfer
+     → The first attempt with this key is still processing. Wait a moment,
+       press Confirm again — the SAME key is reused, so no double charge.
+
+ Balance shows "Rs. ——"
+     → GET /wallets/me failed (see the red alert under the card for why).
+
+ Refreshing /transactions shows raw JSON
+     → Only if the /api proxy rule in vite.config.js was removed/edited.
+       With the prefix intact, page URLs never reach the proxy.
+
+ Frontend changes don't appear
+     → Vite hot-reloads automatically; if all else fails, restart
+       `npm run dev`. If you changed package.json, run `npm install` first.
+
+
+================================================================================
+ 16. THE RULES THIS PROJECT FOLLOWS (RECAP)
+================================================================================
+
+ 1. Pages render UI. The api/ layer makes HTTP calls. Never mixed.
+ 2. All requests go through ONE axios instance (cookies, timeout, refresh,
+    error mapping configured once).
+ 3. The backend is the only source of truth for money. The frontend never
+    computes balances, validates amounts authoritatively, or invents data.
+ 4. Every fetch has four faces: loading / success / error / empty.
+ 5. Honest UI: missing backend features are disabled buttons, not fakes.
+ 6. Comments teach the concept, not the obvious — read them as a course.
+
+================================================================================
+ END — open any file listed above and this guide side by side. Enjoy PayCore!
+================================================================================

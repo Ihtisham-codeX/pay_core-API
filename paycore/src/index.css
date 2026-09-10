@@ -1,0 +1,869 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PayCore — Global Theme
+   ─────────────────────────────────────────────────────────────────────────
+   This single file defines the look of the WHOLE app:
+     1. CSS variables  — our color palette, defined once, reused everywhere
+     2. Base styles    — reset, typography, scrollbars
+     3. Building blocks— buttons, inputs, cards, badges, alerts
+     4. Layout         — sidebar (desktop) / bottom nav (mobile)
+     5. Page-specific  — auth pages, dashboard, transfer flow, tables
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 1. Design tokens (CSS variables) ─────────────────────────────────────
+   CSS variables let us write `var(--color-primary)` everywhere. If the brand
+   color changes one day, we edit ONE line instead of hunting through files. */
+:root {
+  /* Brand — orange */
+  --primary:       #f97316;
+  --primary-dark:  #ea580c;
+  --primary-light: #fff7ed;
+
+  /* Neutrals */
+  --bg:            #f8fafc;  /* app background            */
+  --surface:       #ffffff;  /* cards, sidebar, navbar    */
+  --text:          #111827;  /* headings, important text  */
+  --text-secondary:#6b7280;  /* labels, hints             */
+  --border:        #e5e7eb;  /* card & input borders      */
+
+  /* Feedback colors */
+  --success:       #16a34a;
+  --success-bg:    #f0fdf4;
+  --error:         #dc2626;
+  --error-bg:      #fef2f2;
+  --warning:       #f59e0b;
+  --warning-bg:    #fffbeb;
+
+  /* Layout metrics */
+  --sidebar-width: 240px;
+  --topbar-height: 64px;
+  --bottomnav-height: 60px;
+
+  /* Subtle, consistent shadows (fintech = calm, not flashy) */
+  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.06);
+  --shadow-md: 0 4px 12px rgba(17, 24, 39, 0.08);
+
+  --radius: 12px;    /* standard card/input roundness */
+  --radius-sm: 8px;  /* buttons, badges               */
+}
+
+/* ─── 2. Base / reset ─────────────────────────────────────────────────── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased; /* crisper text on macOS/iOS */
+}
+
+h1, h2, h3, h4 { font-weight: 700; line-height: 1.25; }
+
+a { color: var(--primary-dark); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Remove the ugly blue outline, but keep an accessible focus ring.
+   Keyboard users MUST still see where they are (accessibility). */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Thin, light scrollbars for a cleaner look */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+
+/* ─── 3. Building blocks ──────────────────────────────────────────────── */
+
+/* Card — the container used across every page */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.card-pad { padding: 24px; }
+
+.section-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* Buttons ─────────────────────────────────────────────────────────────
+   .btn       = shared base (size, font, transitions)
+   .btn-primary / .btn-secondary / .btn-danger = color variants
+   .btn-block = full width (used on forms)
+   The :disabled style communicates "wait" while a request is running. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+.btn:active:not(:disabled) { transform: scale(0.98); } /* tiny press feedback */
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+.btn-secondary:hover:not(:disabled) { background: var(--bg); }
+
+.btn-danger { background: var(--error); color: #fff; }
+.btn-danger:hover:not(:disabled) { background: #b91c1c; }
+
+.btn-block { width: 100%; }
+
+/* Inputs ─────────────────────────────────────────────────────────────── */
+.field { margin-bottom: 18px; }
+
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.input {
+  width: 100%;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input::placeholder { color: #9ca3af; }
+.input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15); /* soft orange glow */
+}
+.input.invalid { border-color: var(--error); }
+
+/* Password field: input + eye button share one row */
+.input-wrap { position: relative; }
+.input-wrap .input { padding-right: 44px; }
+.eye-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  border-radius: 6px;
+}
+.eye-btn:hover { color: var(--text); background: var(--bg); }
+
+/* Validation / helper text under inputs */
+.field-error   { color: var(--error); font-size: 12.5px; margin-top: 5px; }
+.field-hint    { color: var(--text-secondary); font-size: 12.5px; margin-top: 5px; }
+
+/* Status badges (Completed, Pending, Failed) */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--bg);      /* neutral fallback for unknown statuses */
+  color: var(--text-secondary);
+}
+.badge-completed { background: var(--success-bg); color: var(--success); }
+.badge-pending   { background: var(--warning-bg); color: var(--warning); }
+.badge-failed    { background: var(--error-bg);   color: var(--error); }
+
+/* Alert banners (form-level errors, network problems) */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  margin-bottom: 16px;
+}
+.alert svg { flex-shrink: 0; margin-top: 1px; }
+.alert-error   { background: var(--error-bg);   color: var(--error); }
+.alert-warning { background: var(--warning-bg); color: var(--warning); }
+.alert-info    { background: var(--primary-light); color: var(--primary-dark); }
+
+/* Spinner (used inside buttons and full-page loading) */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.spinner-dark {
+  border-color: rgba(249, 115, 22, 0.25);
+  border-top-color: var(--primary);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Full-page loading state — never leave the user staring at a blank page */
+.page-loading {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.page-loading .spinner {
+  width: 32px;
+  height: 32px;
+  border-width: 3px;
+}
+
+/* Smaller loading state used INSIDE a card/panel */
+.panel-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* ─── 4. App layout ───────────────────────────────────────────────────── */
+
+/* The shell wraps every authenticated page: sidebar + topbar + content */
+.app-shell { min-height: 100vh; }
+
+/* Sidebar — fixed on the left (desktop only; hidden on mobile) */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 14px;
+  z-index: 20;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 19px;
+  color: var(--text);
+  padding: 4px 10px 18px;
+}
+.brand:hover { text-decoration: none; }
+.brand-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.brand span em { font-style: normal; color: var(--primary); } /* the "Core" in PayCore */
+
+/* Nav links: gray by default, orange pill when active */
+.sidebar-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 14px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.nav-item:hover { background: var(--bg); color: var(--text); text-decoration: none; }
+.nav-item.active { background: var(--primary-light); color: var(--primary-dark); font-weight: 600; }
+
+.sidebar-footer { border-top: 1px solid var(--border); padding-top: 12px; }
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.logout-btn:hover { background: var(--error-bg); color: var(--error); }
+
+/* Topbar — sits above the content area */
+.main-area {
+  margin-left: var(--sidebar-width);          /* make room for the sidebar */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: var(--topbar-height);
+  background: rgba(255, 255, 255, 0.92);      /* slight transparency + blur */
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+}
+.topbar-title { font-size: 18px; font-weight: 700; }
+
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+.icon-btn {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.icon-btn:hover { background: var(--bg); color: var(--text); }
+
+/* Orange dot on the notification bell (decorative for now) */
+.icon-btn .dot {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 1.5px solid var(--surface);
+}
+
+/* Round avatar with the user's initial — used in topbar + profile */
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  font-weight: 700;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #fed7aa;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+.avatar:hover { box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2); }
+
+.avatar-lg {
+  width: 64px;
+  height: 64px;
+  font-size: 24px;
+  cursor: default;
+}
+
+/* Content area: pages control their own max-width */
+.page-content {
+  flex: 1;
+  padding: 28px 32px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;   /* center wide content on very large screens */
+}
+
+.page-header { margin-bottom: 24px; }
+.page-header h1 { font-size: 22px; }
+.page-header p  { color: var(--text-secondary); font-size: 14px; margin-top: 2px; }
+
+/* Bottom navigation — mobile only (hidden on desktop) */
+.bottom-nav {
+  display: none; /* hidden on desktop */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--bottomnav-height);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  z-index: 20;
+  padding-bottom: env(safe-area-inset-bottom, 0); /* iPhone home-bar spacing */
+}
+.bottom-nav-inner {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr); /* 4 equal tabs */
+  height: 100%;
+}
+.bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+.bottom-nav-item.active { color: var(--primary-dark); }
+.bottom-nav-item.active .bn-icon { background: var(--primary-light); }
+.bn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 26px;
+  border-radius: 999px;
+  transition: background 0.15s ease;
+}
+
+/* ─── 5. Authentication pages (Login / Register) ──────────────────────── */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 36px 32px;
+}
+.auth-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+  text-align: center;
+}
+.auth-brand .brand-logo { width: 48px; height: 48px; border-radius: 14px; }
+.auth-brand h1 { font-size: 22px; }
+.auth-brand p  { color: var(--text-secondary); font-size: 14px; }
+
+.auth-switch {
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 22px;
+}
+.auth-switch a { font-weight: 600; }
+
+/* Two name fields (first/last) side by side */
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* ─── 6. Dashboard ────────────────────────────────────────────────────── */
+.greeting h1 { font-size: 22px; }
+.greeting p  { color: var(--text-secondary); font-size: 14px; margin-top: 2px; }
+
+/* The hero balance card — the one place allowed to feel branded */
+.balance-card {
+  margin: 24px 0;
+  padding: 28px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: #fff;
+  box-shadow: var(--shadow-md);
+}
+.balance-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.9;
+}
+.balance-amount {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin: 8px 0 16px;
+}
+.balance-footnote { font-size: 12.5px; opacity: 0.85; margin-top: 10px; }
+
+.eye-btn-light {
+  background: rgba(255, 255, 255, 0.18);
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 7px;
+  display: flex;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.eye-btn-light:hover { background: rgba(255, 255, 255, 0.3); }
+
+/* Quick actions — big tappable tiles under the balance card */
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 28px;
+}
+.quick-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.quick-action:hover:not(:disabled) {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.quick-action:disabled { opacity: 0.5; cursor: not-allowed; }
+.qa-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dashboard = two columns on desktop (recent tx | insights), stacked on mobile */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Panel header with a "View all" link on the right */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.view-all {
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Transaction row — used on dashboard and transactions page */
+.tx-list { display: flex; flex-direction: column; }
+.tx-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  transition: background 0.12s ease;
+}
+.tx-item:last-child { border-bottom: none; }
+a.tx-item:hover { background: var(--bg); text-decoration: none; border-radius: 8px; }
+
+.tx-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tx-icon.debit  { background: var(--primary-light); color: var(--primary-dark); }
+.tx-icon.credit { background: var(--success-bg);    color: var(--success); }
+
+.tx-info { flex: 1; min-width: 0; } /* min-width:0 lets the name truncate */
+.tx-name {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tx-sub { font-size: 12.5px; color: var(--text-secondary); }
+
+.tx-amount { font-weight: 700; font-size: 14px; white-space: nowrap; }
+.tx-amount.credit { color: var(--success); }
+.tx-amount.debit  { color: var(--text); }   /* outgoing = neutral, per design */
+
+/* Centered hero at the top of the transaction details page */
+.tx-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+.tx-hero .tx-icon { width: 54px; height: 54px; }
+
+/* Empty state (no transactions yet) */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.empty-state svg { color: #d1d5db; }
+.empty-state strong { color: var(--text); font-size: 15px; }
+
+/* Insights panel on the dashboard */
+.insight-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.insight-row:last-child { border-bottom: none; }
+.insight-row .k { color: var(--text-secondary); }
+.insight-row .v { font-weight: 700; }
+
+/* ─── 7. Send money flow ──────────────────────────────────────────────── */
+.send-card {
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* Big "Rs." prefixed amount input */
+.amount-input-wrap { position: relative; }
+.amount-input-wrap .input {
+  padding-left: 52px;
+  font-size: 22px;
+  font-weight: 700;
+}
+.amount-prefix {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+
+/* Suggested quick amounts (chips under the amount field) */
+.amount-chips { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.chip {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.chip:hover { border-color: var(--primary); color: var(--primary-dark); }
+
+/* Review screen (step 2 of the transfer) */
+.review-amount {
+  text-align: center;
+  font-size: 38px;
+  font-weight: 800;
+  color: var(--primary-dark);
+  padding: 8px 0 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+/* "← Back" text button used on the confirm screen */
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  margin: -4px 0 10px -8px;
+  border-radius: 8px;
+}
+.back-btn:hover { color: var(--text); background: var(--bg); }
+
+/* Trust footer under transfer forms */
+.secure-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 18px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.secure-note svg { color: var(--success); flex-shrink: 0; }
+
+/* Receipt-style rows: label left, value right */
+.review-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.review-row:last-of-type { border-bottom: none; }
+.review-row .k { color: var(--text-secondary); flex-shrink: 0; }
+.review-row .v { font-weight: 600; text-align: right; word-break: break-all; }
+
+.review-actions { display: flex; gap: 12px; margin-top: 22px; }
+.review-actions .btn { flex: 1; }
+
+/* Success screen after a completed transfer */
+.success-card {
+  max-width: 420px;
+  margin: 40px auto;
+  padding: 36px 28px;
+  text-align: center;
+  animation: pop-in 0.35s ease; /* one subtle entrance animation */
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.success-circle {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--success-bg);
+  color: var(--success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 18px;
+  animation: pop-in 0.45s ease;
+}
+.success-card h2 { font-size: 20px; margin-bottom: 4px; }
+.success-amount { font-size: 32px; font-weight: 800; margin: 6px 0 22px; }
+.success-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+
+/* ─── 8. Transactions page ────────────────────────────────────────────── */
+.date-group-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin: 22px 0 6px;
+}
+.date-group-label:first-child { margin-top: 0; }
+
+/* Load more button under the list */
+.load-more { display: flex; justify-content: center; margin-top: 18px; }
+
+/* ─── 9. Profile page ─────────────────────────────────────────────────── */
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+.profile-head h1 { font-size: 20px; }
+.profile-head p  { color: var(--text-secondary); font-size: 14px; }
+
+/* ─── 10. Responsive breakpoints ────────────────────────────────────────
+   Mobile-first values live above; at ≤ 900px we switch to the
+   wallet-style layout: no sidebar, topbar shrinks, bottom nav appears. */
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+
+  .main-area { margin-left: 0; padding-bottom: var(--bottomnav-height); }
+  .topbar { padding: 0 16px; }
+  .page-content { padding: 18px 16px 28px; }
+
+  .bottom-nav { display: block; }
+
+  .quick-actions { grid-template-columns: repeat(2, 1fr); }
+  .dashboard-grid { grid-template-columns: 1fr; } /* stack panels */
+  .balance-amount { font-size: 28px; }
+
+  /* Keep wide tables/forms readable on small screens */
+  .form-row { grid-template-columns: 1fr; }
+  .review-actions { flex-direction: column-reverse; } /* Confirm on top, easier thumb reach */
+}
+
+@media (max-width: 480px) {
+  .balance-card { padding: 22px; }
+  .card-pad { padding: 18px; }
+  .auth-card { padding: 28px 22px; }
+}
