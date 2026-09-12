@@ -41,6 +41,17 @@ export default function Login() {
       return;
     }
 
+    // The backend's EmailStr validator rejects anything that isn't a real
+    // email with a 422. Catching the common case here (users typing their
+    // USERNAME, which Register also collects) gives an instant, clear
+    // message instead of a round-trip failure.
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError(
+        "Please enter a valid email address — log in with the email you registered, not your username."
+      );
+      return;
+    }
+
     setLoading(true); // disable the button so it can't be double-clicked
     const result = await login(email.trim(), password);
     setLoading(false);

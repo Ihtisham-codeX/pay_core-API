@@ -14,7 +14,23 @@ const api = axios.create({
 export function getErrorMessage(error) {
 
   const status = error.response?.status; // ?. -> If response exists, get status otherwise don't crash
-  const detail = error.response?.data?.detail;
+  const rawDetail = error.response?.data?.detail;
+
+  // FastAPI validation errors (422) return detail as an ARRAY of objects
+  // like { msg: "value is not a valid email..." } — flatten it to one
+  // friendly string instead of trying to render objects in the UI.
+  if (status === 422) {
+    if (Array.isArray(rawDetail) && rawDetail.length > 0) {
+      const first = rawDetail[0]?.msg || "";
+      if (/email/i.test(first)) {
+        return "Please enter a valid email address."
+      }
+      return first || "Please check the form and try again.";
+    }
+    return rawDetail || "Please check the form and try again.";
+  }
+
+  const detail = typeof rawDetail === "string" ? rawDetail : undefined;
 
   if (status === 400) return detail || "Invalid request. Please check your input.";
 
